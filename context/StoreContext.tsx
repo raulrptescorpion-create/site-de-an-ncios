@@ -13,6 +13,7 @@ interface StoreContextType {
   isLoading: boolean;
   login: (email: string, role: UserRole, shopData?: Partial<User>) => void;
   logout: () => void;
+  updateUser: (data: Partial<User>) => Promise<void>;
   addProduct: (product: Omit<Product, 'id' | 'views' | 'likes' | 'createdAt' | 'shopId' | 'shopName'>) => void;
   likeProduct: (id: string) => void;
   viewProduct: (id: string) => void;
@@ -175,9 +176,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: supabase ? undefined as any : (role === 'shop' ? `shop_${Math.random().toString(36).substr(2,5)}` : `user_${Math.random().toString(36).substr(2,5)}`),
       email, // This is the phone number
       name: fallbackName,
+      shopName: fallbackName, // Explicitly set shopName
       role,
       plan: role === 'shop' ? 'free_trial' : undefined,
       planExpiresAt: defaultExpiration,
+      phone: email,
       ...shopData
     };
     
@@ -245,9 +248,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // New session / unregistered mock shop
             // If registering, we have shopData. If not, we use fallbackName "Loja Anunciante"
             setUser(newUser);
-            if (shopData) {
-               setShops(prev => [...prev, newUser]);
-            }
+            // Add to mock shops so it appears in the list
+            setShops(prev => [...prev, newUser]);
           }
         } else {
           setUser(newUser);
@@ -257,6 +259,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const logout = () => setUser(null);
+
+  const updateUser = async (data: Partial<User>) => {
+    if (!user) return;
+    
+    // Merge updates
+    const updatedUser = { ...user, ...data };
+    // If shopName is updated, ensure name is also synced if it was the same
+    if (data.shopName) updatedUser.name = data.shopName;
+
+    setUser(updatedUser);
+    
+    // Update local shops list
+    setShops(prev => prev.map(s => s.id === user.id ? updatedUser : s));
+
+    if (supabase) {
+        const dbUpdate: any = {};
+        if (data.name) dbUpdate.name = data.name;
+        if (data.shopName) dbUpdate.shop_name = data.shopName;
+        if (data.phone) dbUpdate.phone = data.phone;
+        if (data.address) dbUpdate.address = data.address;
+        if (data.neighborhood) dbUpdate.neighborhood = data.neighborhood;
+        if (data.openTime) dbUpdate.open_time = data.openTime;
+        if (data.closeTime) dbUpdate.close_time = data.closeTime;
+        if (data.logoUrl) dbUpdate.logo_url = data.logoUrl;
+        
+        await supabase.from('profiles').update(dbUpdate).eq('id', user.id);
+    }
+  };
 
   const addProduct = async (productData: Omit<Product, 'id' | 'views' | 'likes' | 'createdAt' | 'shopId' | 'shopName'>) => {
     if (!user || user.role !== 'shop') return;
@@ -430,7 +460,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StoreContext.Provider value={{
       user, products, categories, shops, chats, orders, isLoading,
-      login, logout, addProduct, likeProduct, viewProduct, buyProduct,
+      login, logout, updateUser, addProduct, likeProduct, viewProduct, buyProduct,
       addCategory, removeCategory, sendMessage, upgradePlan,
       isSupabaseConnected: !!supabase
     }}>

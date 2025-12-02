@@ -5,7 +5,7 @@ import {
   ShoppingBag, User as UserIcon, LogOut, PlusCircle, 
   Store, MessageCircle, Heart, Eye, Menu, X, Trash2, MapPin, Clock, Phone,
   Image as ImageIcon, Loader2, TrendingUp, DollarSign, Package, Search, AlertTriangle, Lock,
-  CreditCard, Check, Calendar, Timer, Upload, FileText, QrCode, Smartphone, Send, Mail
+  CreditCard, Check, Calendar, Timer, Upload, FileText, QrCode, Smartphone, Send, Mail, Edit
 } from 'lucide-react';
 import { PLANS, PLACEHOLDER_IMG, APP_NAME } from './constants';
 import { Product, User, Plan } from './types';
@@ -72,7 +72,7 @@ const Navbar = () => {
                 )}
                 <div className="flex items-center space-x-2 text-sm text-gray-400 border-l border-gray-700 pl-4">
                   <UserIcon className="w-4 h-4" />
-                  <Link to="/profile" className="hover:text-white transition">{user.name}</Link>
+                  <Link to="/dashboard" className="hover:text-white transition">{user.shopName || user.name}</Link>
                   <button onClick={logout} className="ml-4 text-gray-500 hover:text-white">
                     <LogOut className="w-4 h-4" />
                   </button>
@@ -109,7 +109,7 @@ const Navbar = () => {
                   </>
                 )}
                 {user.role === 'admin' && <Link to="/admin" className="block px-3 py-2 text-red-400">Admin</Link>}
-                <Link to="/profile" className="block px-3 py-2 text-gray-300">Meu Perfil</Link>
+                <Link to="/dashboard" className="block px-3 py-2 text-gray-300">Meu Perfil</Link>
                 <button onClick={logout} className="block w-full text-left px-3 py-2 text-gray-400">Sair</button>
                </>
              ) : (
@@ -188,7 +188,7 @@ const ShopCard: React.FC<{ shop: User }> = ({ shop }) => (
       </div>
       
       <div>
-        <h3 className="text-2xl font-display font-bold text-white mb-1">{shop.shopName}</h3>
+        <h3 className="text-2xl font-display font-bold text-white mb-1">{shop.shopName || shop.name}</h3>
         <p className="text-gray-400 text-sm mb-2">{shop.neighborhood}</p>
         
         <div className="space-y-1 text-sm text-gray-300">
@@ -842,8 +842,8 @@ const LoginPage = () => {
 };
 
 const ShopDashboard = () => {
-  const { user, addProduct, categories, products, orders, isLoading, upgradePlan } = useStore();
-  const [activeTab, setActiveTab] = useState<'products'|'add'|'subscription'|'analytics'|'financial'>('products');
+  const { user, addProduct, categories, products, orders, isLoading, upgradePlan, updateUser } = useStore();
+  const [activeTab, setActiveTab] = useState<'products'|'add'|'subscription'|'analytics'|'financial'|'profile'>('products');
   const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<Plan | null>(null);
   const location = useLocation();
 
@@ -863,6 +863,28 @@ const ShopDashboard = () => {
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Profile Form (Initialize with user data)
+  const [profileName, setProfileName] = useState(user?.shopName || user?.name || '');
+  const [profileAddress, setProfileAddress] = useState(user?.address || '');
+  const [profileNeighborhood, setProfileNeighborhood] = useState(user?.neighborhood || '');
+  const [profilePhone, setProfilePhone] = useState(user?.phone || user?.email || '');
+  const [profileOpen, setProfileOpen] = useState(user?.openTime || '09:00');
+  const [profileClose, setProfileClose] = useState(user?.closeTime || '18:00');
+  const [profileLogo, setProfileLogo] = useState(user?.logoUrl || '');
+
+  // Update profile form state when user changes (e.g. initial load)
+  useEffect(() => {
+      if(user) {
+          setProfileName(user.shopName || user.name || '');
+          setProfileAddress(user.address || '');
+          setProfileNeighborhood(user.neighborhood || '');
+          setProfilePhone(user.phone || user.email || ''); // Fallback to email/ID if phone missing
+          setProfileOpen(user.openTime || '09:00');
+          setProfileClose(user.closeTime || '18:00');
+          setProfileLogo(user.logoUrl || '');
+      }
+  }, [user]);
 
   // Financial Form
   const [proofFile, setProofFile] = useState<string>('');
@@ -926,6 +948,22 @@ const ShopDashboard = () => {
     // Switch to list
     setActiveTab('products');
   };
+
+  const handleProfileUpdate = async (e: React.FormEvent) => {
+      e.preventDefault();
+      await updateUser({
+          shopName: profileName,
+          name: profileName, // Sync generic name
+          address: profileAddress,
+          neighborhood: profileNeighborhood,
+          phone: profilePhone,
+          openTime: profileOpen,
+          closeTime: profileClose,
+          logoUrl: profileLogo
+      });
+      alert('Perfil atualizado com sucesso!');
+      playSuccessSound();
+  };
   
   const handleProofSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -975,8 +1013,15 @@ const ShopDashboard = () => {
         <div className="w-full md:w-64 flex-shrink-0">
           <div className="bg-akira-card p-4 rounded-lg border border-gray-800 sticky top-24">
              <div className="text-center mb-6">
-                <h2 className="font-bold text-white text-lg">{user.shopName}</h2>
-                <p className="text-xs text-gray-500">{user.email}</p>
+                <div className="w-20 h-20 mx-auto rounded-full overflow-hidden bg-gray-900 border border-gray-700 mb-3">
+                    {user.logoUrl ? (
+                        <img src={user.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                        <Store className="w-10 h-10 text-gray-500 m-auto mt-4" />
+                    )}
+                </div>
+                <h2 className="font-bold text-white text-lg">{user.shopName || user.name}</h2>
+                <p className="text-xs text-gray-500">{user.phone || user.email}</p>
              </div>
              <nav className="space-y-2">
                <button onClick={() => setActiveTab('products')} className={`w-full text-left px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'products' ? 'bg-akira-yellow text-black font-bold' : 'text-gray-400 hover:bg-gray-800'}`}>
@@ -993,6 +1038,9 @@ const ShopDashboard = () => {
                </button>
                <button onClick={() => setActiveTab('financial')} className={`w-full text-left px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'financial' ? 'bg-akira-yellow text-black font-bold' : 'text-gray-400 hover:bg-gray-800'}`}>
                  <DollarSign className="w-4 h-4" /> Financeiro
+               </button>
+               <button onClick={() => setActiveTab('profile')} className={`w-full text-left px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'profile' ? 'bg-akira-yellow text-black font-bold' : 'text-gray-400 hover:bg-gray-800'}`}>
+                 <Edit className="w-4 h-4" /> Dados da Loja
                </button>
              </nav>
           </div>
@@ -1294,6 +1342,83 @@ const ShopDashboard = () => {
                    </div>
                 </div>
              </div>
+          )}
+          
+          {activeTab === 'profile' && (
+              <div className="bg-akira-card p-6 rounded-lg border border-gray-800">
+                  <h2 className="text-2xl font-bold text-white mb-6">Dados da Loja</h2>
+                  
+                  <form onSubmit={handleProfileUpdate} className="space-y-4 max-w-2xl">
+                      <div>
+                          <label className="block text-xs text-gray-400 mb-1">Nome da Loja</label>
+                          <input 
+                              required 
+                              className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
+                              value={profileName} onChange={e => setProfileName(e.target.value)} 
+                          />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-xs text-gray-400 mb-1">Telefone / WhatsApp</label>
+                              <input 
+                                  className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
+                                  value={profilePhone} onChange={e => setProfilePhone(e.target.value)} 
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs text-gray-400 mb-1">Bairro</label>
+                              <input 
+                                  className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
+                                  value={profileNeighborhood} onChange={e => setProfileNeighborhood(e.target.value)} 
+                              />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs text-gray-400 mb-1">Endereço Completo</label>
+                          <input 
+                              className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
+                              value={profileAddress} onChange={e => setProfileAddress(e.target.value)} 
+                          />
+                      </div>
+
+                      <div className="flex space-x-2">
+                          <div className="w-1/2">
+                              <label className="text-[10px] text-gray-500">Abertura</label>
+                              <input 
+                                  type="time" 
+                                  className="w-full bg-black border border-gray-700 rounded p-2 text-white" 
+                                  value={profileOpen} onChange={e => setProfileOpen(e.target.value)} 
+                              />
+                          </div>
+                          <div className="w-1/2">
+                              <label className="text-[10px] text-gray-500">Fechamento</label>
+                              <input 
+                                  type="time" 
+                                  className="w-full bg-black border border-gray-700 rounded p-2 text-white" 
+                                  value={profileClose} onChange={e => setProfileClose(e.target.value)} 
+                              />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs text-gray-400 mb-1">URL do Logo</label>
+                          <input 
+                              className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
+                              value={profileLogo} onChange={e => setProfileLogo(e.target.value)} 
+                              placeholder="https://exemplo.com/logo.png"
+                          />
+                          <p className="text-[10px] text-gray-500 mt-1">Recomendamos usar uma URL de imagem pública (ex: Imgur, Google Drive link direto).</p>
+                      </div>
+
+                      <div className="pt-4">
+                          <button className="bg-akira-yellow text-black font-bold py-3 px-8 rounded hover:bg-yellow-500 transition">
+                              Salvar Alterações
+                          </button>
+                      </div>
+                  </form>
+              </div>
           )}
 
           {activeTab === 'analytics' && (
