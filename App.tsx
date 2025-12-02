@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -5,7 +6,8 @@ import {
   ShoppingBag, User as UserIcon, LogOut, PlusCircle, 
   Store, MessageCircle, Heart, Eye, Menu, X, Trash2, MapPin, Clock, Phone,
   Image as ImageIcon, Loader2, TrendingUp, DollarSign, Package, Search, AlertTriangle, Lock,
-  CreditCard, Check, Calendar, Timer, Upload, FileText, QrCode, Smartphone, Send, Mail, Edit
+  CreditCard, Check, Calendar, Timer, Upload, FileText, QrCode, Smartphone, Send, Mail, Edit,
+  Navigation, Volume2, VolumeX, Bell, BellOff, Database
 } from 'lucide-react';
 import { PLANS, PLACEHOLDER_IMG, APP_NAME } from './constants';
 import { Product, User, Plan } from './types';
@@ -33,6 +35,47 @@ const playSuccessSound = () => {
     console.error("Audio play failed", e);
   }
 };
+
+const playNotificationSound = () => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+    oscillator.frequency.linearRampToValueAtTime(440, audioCtx.currentTime + 0.1); // A4
+    
+    gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.2);
+  } catch (e) {
+    console.error("Audio play failed", e);
+  }
+};
+
+// --- Helper for Distance (Haversine Formula) ---
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg: number) {
+  return deg * (Math.PI / 180);
+}
 
 // --- Components ---
 
@@ -139,6 +182,7 @@ const ProductCard: React.FC<{ product: Product, onClick: () => void }> = ({ prod
         <img 
           src={product.imageUrl || PLACEHOLDER_IMG} 
           alt={product.title} 
+          loading="lazy"
           className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
         />
         <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-akira-yellow font-bold backdrop-blur-sm">
@@ -179,7 +223,7 @@ const ShopCard: React.FC<{ shop: User }> = ({ shop }) => (
       {/* Logo Display */}
       <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-700 bg-gray-900 flex-shrink-0">
         {shop.logoUrl ? (
-          <img src={shop.logoUrl} alt={shop.shopName} className="w-full h-full object-cover" />
+          <img src={shop.logoUrl} alt={shop.shopName} loading="lazy" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <Store className="w-8 h-8 text-gray-600" />
@@ -200,7 +244,6 @@ const ShopCard: React.FC<{ shop: User }> = ({ shop }) => (
             <Clock className="w-3 h-3 text-akira-yellow mr-2" />
             {shop.openTime} - {shop.closeTime}
           </div>
-          {/* Phone removed as requested */}
         </div>
       </div>
     </div>
@@ -211,15 +254,73 @@ const ShopCard: React.FC<{ shop: User }> = ({ shop }) => (
 );
 
 const ChatModal: React.FC<{ product: Product, onClose: () => void }> = ({ product, onClose }) => {
-  const { user, chats, sendMessage } = useStore();
+  const { user, chats, sendMessage, shops } = useStore();
   const [msg, setMsg] = useState("");
+  const [guestId] = useState(() => localStorage.getItem('chatGuestId') || 'guest_' + Math.random().toString(36).substr(2, 9));
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  
+  // Geolocation State
+  const [distance, setDistance] = useState<string | null>(null);
+  const [userLoc, setUserLoc] = useState<{lat: number, lng: number} | null>(null);
+
+  useEffect(() => {
+    // Persist Guest ID
+    if (!localStorage.getItem('chatGuestId')) {
+      localStorage.setItem('chatGuestId', guestId);
+    }
+
+    // Get Location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        setUserLoc({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      }, (error) => {
+        console.log("Geolocation error or denied:", error);
+      });
+    }
+  }, []);
+
+  const shop = shops.find(s => s.id === product.shopId);
+
+  // Calculate Distance Effect
+  useEffect(() => {
+    if (userLoc && shop && shop.lat && shop.lng) {
+      const dist = getDistanceFromLatLonInKm(userLoc.lat, userLoc.lng, shop.lat, shop.lng);
+      setDistance(dist < 1 ? `${(dist * 1000).toFixed(0)} m` : `${dist.toFixed(1)} km`);
+    }
+  }, [userLoc, shop]);
   
   const productChats = chats.filter(c => c.productId === product.id);
 
+  // Determine Sender ID for logic
+  const myId = user ? user.id : guestId;
+  const myName = user ? (user.name || 'Eu') : 'Visitante';
+
+  // Sound Effect for New Messages
+  const prevChatsLength = useRef(productChats.length);
+  useEffect(() => {
+    if (productChats.length > prevChatsLength.current) {
+        const lastMsg = productChats[productChats.length - 1];
+        if (lastMsg.senderId !== myId && soundEnabled) {
+            playNotificationSound();
+        }
+    }
+    prevChatsLength.current = productChats.length;
+  }, [productChats, myId, soundEnabled]);
+
+
   const handleSend = () => {
     if (!msg.trim()) return;
-    sendMessage(product.id, msg);
+    sendMessage(product.id, msg, { id: myId, name: myName });
     setMsg("");
+  };
+
+  const toggleSound = () => {
+      const newState = !soundEnabled;
+      setSoundEnabled(newState);
+      if(newState) playNotificationSound();
   };
 
   return (
@@ -229,7 +330,7 @@ const ChatModal: React.FC<{ product: Product, onClose: () => void }> = ({ produc
         <div className="p-4 border-b border-gray-700 bg-akira-dark rounded-t-lg flex justify-between items-start">
           <div className="flex gap-3">
              <div className="w-12 h-12 rounded overflow-hidden bg-gray-900 flex-shrink-0">
-               <img src={product.imageUrl} className="w-full h-full object-cover" />
+               <img src={product.imageUrl} loading="lazy" className="w-full h-full object-cover" />
              </div>
              <div>
                <h3 className="font-bold text-white text-sm line-clamp-1">{product.title}</h3>
@@ -237,12 +338,36 @@ const ChatModal: React.FC<{ product: Product, onClose: () => void }> = ({ produc
                <p className="text-xs text-gray-500">{product.shopName}</p>
              </div>
           </div>
-          <button onClick={onClose}><X className="text-gray-400 hover:text-white" /></button>
+          <div className="flex items-center gap-2">
+            <button onClick={toggleSound} className="text-gray-400 hover:text-akira-yellow transition">
+                {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+            <button onClick={onClose}><X className="text-gray-400 hover:text-white" /></button>
+          </div>
         </div>
         
         {/* Messages / Details Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0f0f0f]">
           
+          {/* Shop Address & Distance Display */}
+          {shop && (
+              <div className="bg-gray-800/50 p-3 rounded border border-gray-700 mb-4">
+                  <h4 className="text-akira-yellow font-bold text-xs uppercase mb-2 flex items-center gap-2">
+                      <MapPin className="w-3 h-3" /> Endereço da Loja
+                  </h4>
+                  <p className="text-white text-sm font-bold">{shop.address || 'Endereço não informado'}</p>
+                  <p className="text-gray-400 text-xs">{shop.neighborhood}</p>
+                  <div className="mt-2 text-xs text-gray-500 flex flex-wrap gap-4">
+                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {shop.openTime} às {shop.closeTime}</span>
+                       {distance && (
+                         <span className="flex items-center gap-1 text-green-400 font-bold bg-green-900/20 px-2 py-0.5 rounded border border-green-900/50">
+                           <Navigation className="w-3 h-3" /> {distance} de você
+                         </span>
+                       )}
+                  </div>
+              </div>
+          )}
+
           {/* Technical Details Block */}
           {(product.brand || product.model) && (
             <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
@@ -273,13 +398,16 @@ const ChatModal: React.FC<{ product: Product, onClose: () => void }> = ({ produc
           )}
 
           <div className="border-t border-gray-800 pt-3">
-             <p className="text-xs text-gray-500 font-bold mb-2">Chat com a Loja</p>
+             <p className="text-xs text-gray-500 font-bold mb-2 flex items-center gap-2">
+                 Chat com a Loja 
+                 {soundEnabled && <span className="text-[10px] text-green-500 font-normal bg-green-900/20 px-1 rounded">Som Ativo</span>}
+             </p>
              {productChats.length === 0 && <p className="text-center text-gray-600 text-sm mt-2">Envie uma mensagem para negociar.</p>}
           </div>
           
           {productChats.map(c => (
-            <div key={c.id} className={`flex ${c.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] p-3 rounded-xl text-sm ${c.senderId === user?.id ? 'bg-akira-yellow text-black rounded-tr-none' : 'bg-gray-800 text-gray-200 rounded-tl-none'}`}>
+            <div key={c.id} className={`flex ${c.senderId === myId ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] p-3 rounded-xl text-sm ${c.senderId === myId ? 'bg-akira-yellow text-black rounded-tr-none' : 'bg-gray-800 text-gray-200 rounded-tl-none'}`}>
                 <p className="font-bold text-[10px] mb-1 opacity-70 uppercase">{c.senderName}</p>
                 {c.text}
               </div>
@@ -287,27 +415,20 @@ const ChatModal: React.FC<{ product: Product, onClose: () => void }> = ({ produc
           ))}
         </div>
 
-        {/* Input Area */}
+        {/* Input Area - Open to everyone now */}
         <div className="p-4 border-t border-gray-700 bg-akira-dark rounded-b-lg">
-          {user ? (
-            <div className="flex space-x-2">
-              <input 
-                value={msg} 
-                onChange={e => setMsg(e.target.value)}
-                className="flex-1 bg-black border border-gray-700 rounded-full px-4 py-2 text-white focus:outline-none focus:border-akira-yellow text-sm"
-                placeholder="Digite sua dúvida..."
-                onKeyDown={e => e.key === 'Enter' && handleSend()}
-              />
-              <button onClick={handleSend} className="bg-akira-yellow text-black p-2 rounded-full hover:bg-yellow-500 flex-shrink-0 w-10 h-10 flex items-center justify-center">
-                <MessageCircle className="w-5 h-5" />
-              </button>
-            </div>
-          ) : (
-            <div className="text-center">
-               <p className="text-red-400 text-sm mb-2">Faça login para negociar.</p>
-               <Link to="/login" className="inline-block bg-gray-800 text-white text-xs px-3 py-1 rounded hover:bg-gray-700">Ir para Login</Link>
-            </div>
-          )}
+          <div className="flex space-x-2">
+            <input 
+              value={msg} 
+              onChange={e => setMsg(e.target.value)}
+              className="flex-1 bg-black border border-gray-700 rounded-full px-4 py-2 text-white focus:outline-none focus:border-akira-yellow text-sm"
+              placeholder="Digite sua dúvida..."
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+            />
+            <button onClick={handleSend} className="bg-akira-yellow text-black p-2 rounded-full hover:bg-yellow-500 flex-shrink-0 w-10 h-10 flex items-center justify-center">
+              <MessageCircle className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -569,7 +690,7 @@ const UserProfile = () => {
             {myOrders.map(order => (
                 <div key={order.id} className="bg-akira-card p-4 rounded-lg border border-gray-800 flex flex-col md:flex-row gap-4 items-center">
                 <div className="w-16 h-16 bg-gray-900 rounded overflow-hidden flex-shrink-0">
-                    <img src={order.productImage} alt={order.productTitle} className="w-full h-full object-cover" />
+                    <img src={order.productImage} alt={order.productTitle} loading="lazy" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 w-full text-center md:text-left">
                     <h3 className="font-bold text-white">{order.productTitle}</h3>
@@ -839,7 +960,7 @@ const LoginPage = () => {
                             />
                             {logoUrl ? (
                               <div className="flex items-center gap-2">
-                                <img src={logoUrl} alt="Logo Preview" className="w-8 h-8 object-cover rounded" />
+                                <img src={logoUrl} alt="Logo Preview" loading="lazy" className="w-8 h-8 object-cover rounded" />
                                 <span className="text-xs text-green-500 font-bold">Logo Carregada</span>
                               </div>
                             ) : (
@@ -872,6 +993,9 @@ const ShopDashboard = () => {
   const [activeTab, setActiveTab] = useState<'products'|'add'|'subscription'|'analytics'|'financial'|'profile'>('products');
   const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<Plan | null>(null);
   const location = useLocation();
+
+  // Individual product sound settings (mocked state for session)
+  const [mutedProducts, setMutedProducts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1009,6 +1133,18 @@ const ShopDashboard = () => {
     }
   };
 
+  // Toggle sound for specific product
+  const toggleProductSound = (id: string) => {
+     const newMuted = new Set(mutedProducts);
+     if (newMuted.has(id)) {
+         newMuted.delete(id);
+         playNotificationSound(); // Play sound to confirm UNMUTE
+     } else {
+         newMuted.add(id);
+     }
+     setMutedProducts(newMuted);
+  };
+
   // Analytics
   // Removed Sales and Orders KPI logic as requested
   const totalViews = myProducts.reduce((acc, curr) => acc + curr.views, 0);
@@ -1041,7 +1177,7 @@ const ShopDashboard = () => {
              <div className="text-center mb-6">
                 <div className="w-20 h-20 mx-auto rounded-full overflow-hidden bg-gray-900 border border-gray-700 mb-3">
                     {user.logoUrl ? (
-                        <img src={user.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                        <img src={user.logoUrl} alt="Logo" loading="lazy" className="w-full h-full object-cover" />
                     ) : (
                         <Store className="w-10 h-10 text-gray-500 m-auto mt-4" />
                     )}
@@ -1085,13 +1221,20 @@ const ShopDashboard = () => {
                         {myProducts.map(p => (
                             <div key={p.id} className="bg-akira-card p-4 rounded border border-gray-800 flex items-center gap-4">
                                 <div className="w-16 h-16 bg-gray-900 rounded overflow-hidden">
-                                    <img src={p.imageUrl} alt={p.title} className="w-full h-full object-cover" />
+                                    <img src={p.imageUrl} alt={p.title} loading="lazy" className="w-full h-full object-cover" />
                                 </div>
                                 <div className="flex-1">
                                     <h3 className="text-white font-bold">{p.title}</h3>
                                     <p className="text-sm text-gray-500">R$ {p.price.toFixed(2)} • {p.views} views • {p.likes} likes</p>
                                 </div>
                                 <div className="flex gap-2">
+                                    <button 
+                                      onClick={() => toggleProductSound(p.id)}
+                                      className={`p-2 rounded border transition ${!mutedProducts.has(p.id) ? 'bg-gray-800 border-gray-600 text-akira-yellow' : 'bg-transparent border-gray-800 text-gray-600'}`}
+                                      title={!mutedProducts.has(p.id) ? "Som Ativo" : "Som Mudo"}
+                                    >
+                                        {!mutedProducts.has(p.id) ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+                                    </button>
                                     <button className="p-2 text-gray-400 hover:text-white bg-gray-800 rounded"><Eye className="w-4 h-4" /></button>
                                 </div>
                             </div>
@@ -1188,7 +1331,7 @@ const ShopDashboard = () => {
                         />
                         {image ? (
                           <div className="relative w-full h-48">
-                            <img src={image} className="w-full h-full object-contain mx-auto" alt="Preview" />
+                            <img src={image} loading="lazy" className="w-full h-full object-contain mx-auto" alt="Preview" />
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
                                <p className="text-white font-bold text-sm">Clique para alterar</p>
                             </div>
@@ -1439,7 +1582,7 @@ const ShopDashboard = () => {
                               />
                               {profileLogo ? (
                                 <div className="flex items-center gap-2">
-                                  <img src={profileLogo} alt="Logo Preview" className="w-16 h-16 object-cover rounded" />
+                                  <img src={profileLogo} alt="Logo Preview" loading="lazy" className="w-16 h-16 object-cover rounded" />
                                   <span className="text-xs text-green-500 font-bold">Alterar Logo</span>
                                 </div>
                               ) : (
@@ -1501,6 +1644,7 @@ const ShopDashboard = () => {
 const AdminDashboard = () => {
   const { categories, addCategory, removeCategory, user } = useStore();
   const [newCat, setNewCat] = useState('');
+  const [showSql, setShowSql] = useState(false);
 
   if (user?.role !== 'admin') return <Navigate to="/" />;
 
@@ -1511,6 +1655,90 @@ const AdminDashboard = () => {
       setNewCat('');
     }
   };
+
+  const sqlSchema = `
+-- Execute este SQL no Editor SQL do seu Supabase para criar as tabelas necessárias
+
+-- Extensão para UUIDs
+create extension if not exists "uuid-ossp";
+
+-- 1. Tabela de Perfis (Lojas e Usuários)
+create table public.profiles (
+  id text primary key,
+  email text,
+  role text,
+  name text,
+  shop_name text,
+  address text,
+  phone text,
+  neighborhood text,
+  open_time text,
+  close_time text,
+  logo_url text,
+  plan text,
+  plan_expires_at text,
+  lat float8,
+  lng float8,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 2. Tabela de Categorias
+create table public.categories (
+  id uuid default uuid_generate_v4() primary key,
+  name text unique
+);
+
+-- 3. Tabela de Produtos
+create table public.products (
+  id text primary key, -- Usando text para compatibilidade com IDs mistos (mock/real)
+  shop_id text references public.profiles(id),
+  shop_name text,
+  title text,
+  description text,
+  price numeric,
+  image_url text,
+  category text,
+  brand text,
+  model text,
+  views numeric default 0,
+  likes numeric default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 4. Tabela de Pedidos
+create table public.orders (
+  id text primary key,
+  buyer_id text references public.profiles(id),
+  shop_id text references public.profiles(id),
+  product_id text references public.products(id),
+  product_title text,
+  product_image text,
+  price numeric,
+  status text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 5. Tabela de Chat
+create table public.chat_messages (
+  id uuid default uuid_generate_v4() primary key,
+  product_id text references public.products(id),
+  sender_id text,
+  sender_name text,
+  text text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Políticas de Segurança (RLS) Básicas
+alter table public.profiles enable row level security;
+create policy "Public profiles are viewable by everyone" on public.profiles for select using (true);
+create policy "Users can insert their own profile" on public.profiles for insert with check (true);
+create policy "Users can update own profile" on public.profiles for update using (true);
+
+alter table public.products enable row level security;
+create policy "Public products are viewable by everyone" on public.products for select using (true);
+create policy "Shops can insert products" on public.products for insert with check (true);
+create policy "Shops can update own products" on public.products for update using (true);
+  `;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -1539,6 +1767,38 @@ const AdminDashboard = () => {
             Adicionar
           </button>
         </form>
+      </div>
+
+      {/* Database Setup Section */}
+      <div className="bg-akira-card p-6 rounded-lg border border-gray-800">
+        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <Database className="text-akira-yellow" /> Configuração do Banco de Dados (Supabase)
+        </h3>
+        <p className="text-gray-400 text-sm mb-4">
+            Para conectar o aplicativo ao Supabase, defina as variáveis de ambiente <code>REACT_APP_SUPABASE_URL</code> e <code>REACT_APP_SUPABASE_ANON_KEY</code>.
+            Abaixo está o código SQL para criar a estrutura de tabelas necessária.
+        </p>
+        
+        <button 
+            onClick={() => setShowSql(!showSql)} 
+            className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm font-bold border border-gray-700 mb-4"
+        >
+            {showSql ? 'Ocultar SQL' : 'Ver SQL de Criação'}
+        </button>
+
+        {showSql && (
+            <div className="relative">
+                <pre className="bg-black p-4 rounded border border-gray-700 text-green-400 text-xs overflow-x-auto whitespace-pre-wrap">
+                    {sqlSchema}
+                </pre>
+                <button 
+                    onClick={() => navigator.clipboard.writeText(sqlSchema)}
+                    className="absolute top-2 right-2 bg-akira-yellow text-black text-[10px] font-bold px-2 py-1 rounded hover:bg-yellow-500"
+                >
+                    Copiar
+                </button>
+            </div>
+        )}
       </div>
     </div>
   );

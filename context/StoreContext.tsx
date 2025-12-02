@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Product, Category, ChatMessage, UserRole, Order } from '../types';
 import { INITIAL_CATEGORIES, PLANS } from '../constants';
@@ -20,7 +21,7 @@ interface StoreContextType {
   buyProduct: (product: Product) => Promise<void>;
   addCategory: (name: string) => void;
   removeCategory: (id: string) => void;
-  sendMessage: (productId: string, text: string) => void;
+  sendMessage: (productId: string, text: string, guestInfo?: { id: string, name: string }) => void;
   upgradePlan: (planId: string) => Promise<void>;
   isSupabaseConnected: boolean;
 }
@@ -82,7 +83,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                    closeTime: s.close_time || s.closeTime,
                    logoUrl: s.logo_url || s.logoUrl,
                    plan: s.plan,
-                   planExpiresAt: s.plan_expires_at
+                   planExpiresAt: s.plan_expires_at,
+                   lat: s.lat,
+                   lng: s.lng
                }));
                setShops(mappedShops as User[]);
           }
@@ -111,19 +114,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const mockShops: User[] = [
           { 
             id: 'shop1', email: 'tech@akira.com', name: 'CyberTech Store', role: 'shop',
-            shopName: 'CyberTech Store', address: 'Rua Neo Tokyo, 2077', phone: '(11) 9999-8888',
-            neighborhood: 'Centro', openTime: '08:00', closeTime: '22:00',
+            shopName: 'CyberTech Store', address: 'Av. Paulista, 1000', phone: '(11) 9999-8888',
+            neighborhood: 'Bela Vista', openTime: '08:00', closeTime: '22:00',
             logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=CyberTech',
             plan: 'monthly',
-            planExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString() // Expiring soon for demo
+            planExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+            lat: -23.5657, lng: -46.6514 // Av Paulista approx
           },
           { 
             id: 'shop2', email: 'fashion@akira.com', name: 'Neon Fashion', role: 'shop',
-            shopName: 'Neon Fashion', address: 'Av. Blade Runner, 42', phone: '(11) 7777-6666',
-            neighborhood: 'Jardins', openTime: '10:00', closeTime: '20:00',
+            shopName: 'Neon Fashion', address: 'Rua Augusta, 500', phone: '(11) 7777-6666',
+            neighborhood: 'Consolação', openTime: '10:00', closeTime: '20:00',
             logoUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=Neon',
             plan: 'package_90',
-            planExpiresAt: new Date(Date.now() + 80 * 24 * 60 * 60 * 1000).toISOString()
+            planExpiresAt: new Date(Date.now() + 80 * 24 * 60 * 60 * 1000).toISOString(),
+            lat: -23.5505, lng: -46.6559 // Rua Augusta approx
           }
         ];
         setShops(mockShops);
@@ -203,7 +208,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                    closeTime: data.close_time,
                    logoUrl: data.logo_url,
                    planExpiresAt: data.plan_expires_at,
-                   name: data.shop_name || data.name // Ensure shop name is preferred
+                   name: data.shop_name || data.name,
+                   lat: data.lat,
+                   lng: data.lng
                });
           } else {
               const dbUser = {
@@ -219,7 +226,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   logo_url: newUser.logoUrl,
                   plan: newUser.plan,
                   plan_expires_at: newUser.planExpiresAt,
-                  created_at: new Date().toISOString()
+                  created_at: new Date().toISOString(),
+                  lat: newUser.lat,
+                  lng: newUser.lng
               };
               const { data: created, error } = await supabase.from('profiles').insert([dbUser]).select().single();
               if (created) {
@@ -283,6 +292,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (data.openTime) dbUpdate.open_time = data.openTime;
         if (data.closeTime) dbUpdate.close_time = data.closeTime;
         if (data.logoUrl) dbUpdate.logo_url = data.logoUrl;
+        if (data.lat) dbUpdate.lat = data.lat;
+        if (data.lng) dbUpdate.lng = data.lng;
         
         await supabase.from('profiles').update(dbUpdate).eq('id', user.id);
     }
@@ -402,13 +413,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const sendMessage = async (productId: string, text: string) => {
-    if (!user) return;
+  const sendMessage = async (productId: string, text: string, guestInfo?: { id: string, name: string }) => {
+    const senderId = user ? user.id : guestInfo?.id;
+    const senderName = user ? user.name : guestInfo?.name;
+
+    if (!senderId || !senderName) return;
+
     const msg: ChatMessage = {
       id: Math.random().toString(),
       productId,
-      senderId: user.id,
-      senderName: user.name,
+      senderId,
+      senderName,
       text,
       timestamp: new Date().toISOString()
     };
@@ -417,8 +432,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (supabase) {
         await supabase.from('chat_messages').insert([{
             product_id: productId,
-            sender_id: user.id,
-            sender_name: user.name,
+            sender_id: senderId,
+            sender_name: senderName,
             text,
             created_at: msg.timestamp
         }]);

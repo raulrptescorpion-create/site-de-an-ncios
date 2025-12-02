@@ -1,3 +1,4 @@
+
 export type UserRole = 'user' | 'shop' | 'admin';
 
 export interface User {
@@ -13,6 +14,9 @@ export interface User {
   openTime?: string;
   closeTime?: string;
   logoUrl?: string;
+  // Geolocation
+  lat?: number;
+  lng?: number;
   // Subscription
   plan?: 'free_trial' | 'monthly' | 'package_60' | 'package_90' | 'pay_per_item';
   planExpiresAt?: string; // ISO date
