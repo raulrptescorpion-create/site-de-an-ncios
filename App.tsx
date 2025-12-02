@@ -200,10 +200,7 @@ const ShopCard: React.FC<{ shop: User }> = ({ shop }) => (
             <Clock className="w-3 h-3 text-akira-yellow mr-2" />
             {shop.openTime} - {shop.closeTime}
           </div>
-          <div className="flex items-center">
-            <Phone className="w-3 h-3 text-akira-yellow mr-2" />
-            {shop.phone || 'Sem telefone'}
-          </div>
+          {/* Phone removed as requested */}
         </div>
       </div>
     </div>
@@ -666,6 +663,17 @@ const LoginPage = () => {
     }
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmitShop = (e: React.FormEvent) => {
     e.preventDefault();
     if (!verified) return alert('Verifique seu telefone.');
@@ -821,8 +829,26 @@ const LoginPage = () => {
                         </div>
                     </div>
                     <div>
-                        <label className="text-[10px] text-gray-500">URL do Logo (Opcional)</label>
-                        <input placeholder="https://..." className="w-full bg-black border border-gray-700 rounded p-2 text-white" value={logoUrl} onChange={e => setLogoUrl(e.target.value)} />
+                        <label className="text-[10px] text-gray-500">Adicionar Logo</label>
+                        <div className="border border-gray-700 rounded p-2 bg-black flex items-center justify-center cursor-pointer hover:border-akira-yellow transition relative">
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                              onChange={handleLogoUpload}
+                            />
+                            {logoUrl ? (
+                              <div className="flex items-center gap-2">
+                                <img src={logoUrl} alt="Logo Preview" className="w-8 h-8 object-cover rounded" />
+                                <span className="text-xs text-green-500 font-bold">Logo Carregada</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 text-gray-500">
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">Clique para enviar logo</span>
+                              </div>
+                            )}
+                        </div>
                     </div>
 
                     <button disabled={isLoading || !shopEmailVerified} className="w-full bg-akira-yellow text-black font-bold py-3 rounded hover:bg-yellow-500 transition mt-4 disabled:opacity-50 disabled:bg-gray-700 disabled:text-gray-500">
@@ -1021,7 +1047,7 @@ const ShopDashboard = () => {
                     )}
                 </div>
                 <h2 className="font-bold text-white text-lg">{user.shopName || user.name}</h2>
-                <p className="text-xs text-gray-500">{user.phone || user.email}</p>
+                {/* Phone removed as requested */}
              </div>
              <nav className="space-y-2">
                <button onClick={() => setActiveTab('products')} className={`w-full text-left px-4 py-2 rounded transition flex items-center gap-2 ${activeTab === 'products' ? 'bg-akira-yellow text-black font-bold' : 'text-gray-400 hover:bg-gray-800'}`}>
@@ -1403,13 +1429,26 @@ const ShopDashboard = () => {
                       </div>
 
                       <div>
-                          <label className="block text-xs text-gray-400 mb-1">URL do Logo</label>
-                          <input 
-                              className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-akira-yellow focus:outline-none" 
-                              value={profileLogo} onChange={e => setProfileLogo(e.target.value)} 
-                              placeholder="https://exemplo.com/logo.png"
-                          />
-                          <p className="text-[10px] text-gray-500 mt-1">Recomendamos usar uma URL de imagem pública (ex: Imgur, Google Drive link direto).</p>
+                          <label className="block text-xs text-gray-400 mb-1">Adicionar Logo</label>
+                          <div className="border border-gray-700 rounded p-2 bg-black flex items-center justify-center cursor-pointer hover:border-akira-yellow transition relative">
+                              <input 
+                                type="file" 
+                                accept="image/*"
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                onChange={(e) => handleImageUpload(e, setProfileLogo)}
+                              />
+                              {profileLogo ? (
+                                <div className="flex items-center gap-2">
+                                  <img src={profileLogo} alt="Logo Preview" className="w-16 h-16 object-cover rounded" />
+                                  <span className="text-xs text-green-500 font-bold">Alterar Logo</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 text-gray-500">
+                                  <Upload className="w-4 h-4" />
+                                  <span className="text-xs">Clique para enviar logo</span>
+                                </div>
+                              )}
+                          </div>
                       </div>
 
                       <div className="pt-4">
